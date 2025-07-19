@@ -45,3 +45,123 @@
    start-block: uint,
    due-block: uint,
    is-active: bool,
+   is-liquidated: bool
+})
+
+
+;; User loan IDs
+(define-map user-loans principal (list 50 uint))
+
+
+;; Interest rate model variables
+(define-data-var utilization-rate uint u0)
+(define-data-var current-interest-rate uint BASE_INTEREST_RATE)
+
+
+;; private functions
+
+
+;; Calculate interest based on blocks elapsed
+(define-private (calculate-interest (principal-amount uint) (interest-rate uint) (blocks-elapsed uint))
+   (let (
+       (annual-blocks u52560) ;; Approximate blocks per year
+       (interest-per-block (/ (* principal-amount interest-rate) (* annual-blocks u100)))
+   )
+   (* interest-per-block blocks-elapsed))
+)
+
+
+;; Calculate current debt including interest
+(define-private (calculate-current-debt (loan-id uint))
+   (match (map-get? loans loan-id)
+       loan-data
+       (let (
+           (blocks-elapsed (- block-height (get start-block loan-data)))
+           (interest (calculate-interest (get amount loan-data) (get interest-rate loan-data) blocks-elapsed))
+       )
+       (+ (get amount loan-data) interest))
+       u0
+   )
+)
+
+
+   is-liquidated: bool
+})
+
+
+;; User loan IDs
+(define-map user-loans principal (list 50 uint))
+
+
+;; Interest rate model variables
+(define-data-var utilization-rate uint u0)
+(define-data-var current-interest-rate uint BASE_INTEREST_RATE)
+
+
+;; private functions
+
+
+;; Calculate interest based on blocks elapsed
+(define-private (calculate-interest (principal-amount uint) (interest-rate uint) (blocks-elapsed uint))
+   (let (
+       (annual-blocks u52560) ;; Approximate blocks per year
+       (interest-per-block (/ (* principal-amount interest-rate) (* annual-blocks u100)))
+   )
+   (* interest-per-block blocks-elapsed))
+)
+
+
+;; Calculate current debt including interest
+(define-private (calculate-current-debt (loan-id uint))
+   (match (map-get? loans loan-id)
+       loan-data
+       (let (
+           (blocks-elapsed (- block-height (get start-block loan-data)))
+           (interest (calculate-interest (get amount loan-data) (get interest-rate loan-data) blocks-elapsed))
+       )
+       (+ (get amount loan-data) interest))
+       u0
+   )
+)
+
+;; Check if loan can be liquidated
+(define-private (is-liquidatable (loan-id uint))
+   (match (map-get? loans loan-id)
+       loan-data
+       (let (
+           (current-debt (calculate-current-debt loan-id))
+           (collateral-value (get collateral loan-data))
+           (ltv-ratio (/ (* current-debt u100) collateral-value))
+       )
+       (and
+           (get is-active loan-data)
+           (>= ltv-ratio LIQUIDATION_THRESHOLD)
+       ))
+       false
+   )
+)
+
+
+;; Update utilization rate and interest rates
+(define-private (update-rates)
+   (let (
+       (pool-balance (var-get total-pool-balance))
+       (borrowed (var-get total-borrowed))
+       (total-supply (+ pool-balance borrowed))
+   )
+   (if (> total-supply u0)
+       (let (
+           (util-rate (/ (* borrowed u100) total-supply))
+           (new-rate (+ BASE_INTEREST_RATE (/ (* util-rate u2) u10))) ;; Dynamic rate based on utilization
+       )
+       (var-set utilization-rate util-rate)
+       (var-set current-interest-rate new-rate))
+       (begin
+           (var-set utilization-rate u0)
+           (var-set current-interest-rate BASE_INTEREST_RATE)
+       )
+   ))
+)
+
+
+
