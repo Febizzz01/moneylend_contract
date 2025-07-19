@@ -84,7 +84,6 @@
 )
 
 
-
 ;; User loan IDs
 (define-map user-loans principal (list 50 uint))
 
