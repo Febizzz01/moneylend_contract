@@ -45,7 +45,6 @@
    start-block: uint,
    due-block: uint,
    is-active: bool,
-   is-liquidated: bool
 })
 
 
@@ -62,13 +61,13 @@
 
 
 ;; Calculate interest based on blocks elapsed
-(define-private (calculate-interest (principal-amount uint) (interest-rate uint) (blocks-elapsed uint))
-   (let (
-       (annual-blocks u52560) ;; Approximate blocks per year
-       (interest-per-block (/ (* principal-amount interest-rate) (* annual-blocks u100)))
-   )
-   (* interest-per-block blocks-elapsed))
-)
+;; (define-private (calculate-interest (principal-amount uint) (interest-rate uint) (blocks-elapsed uint))
+;;    (let (
+;;        (annual-blocks u52560) ;; Approximate blocks per year
+;;        (interest-per-block (/ (* principal-amount interest-rate) (* annual-blocks u100)))
+;;    )
+;;    (* interest-per-block blocks-elapsed))
+;; )
 
 
 ;; Calculate current debt including interest
@@ -84,9 +83,6 @@
    )
 )
 
-
-   is-liquidated: bool
-})
 
 
 ;; User loan IDs
@@ -163,5 +159,81 @@
    ))
 )
 
+;; Add loan ID to user's loan list
+(define-private (add-user-loan (user principal) (loan-id uint))
+   (let (
+       (current-loans (default-to (list) (map-get? user-loans user)))
+   )
+   (map-set user-loans user (unwrap! (as-max-len? (append current-loans loan-id) u50) false)))
+)
 
+
+;; public functions
+
+
+;; Deposit STX to lending pool
+(define-public (deposit (amount uint))
+   (begin
+       (asserts! (> amount u0) ERR_INVALID_AMOUNT)
+       (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
+       (let (
+           (current-balance (default-to u0 (map-get? user-deposits tx-sender)))
+           (new-balance (+ current-balance amount))
+       )
+       (map-set user-deposits tx-sender new-balance)
+       (var-set total-pool-balance (+ (var-get total-pool-balance) amount))
+       (update-rates)
+       (ok new-balance))
+   )
+)
+
+
+;; Withdraw STX from lending pool
+(define-public (withdraw (amount uint))
+   (let (
+       (user-balance (default-to u0 (map-get? user-deposits tx-sender)))
+       (pool-balance (var-get total-pool-balance))
+   )
+   (asserts! (>= user-balance amount) ERR_INSUFFICIENT_FUNDS)
+   (asserts! (>= pool-balance amount) ERR_POOL_INSUFFICIENT)
+   (try! (as-contract (stx-transfer? amount tx-sender tx-sender)))
+   (map-set user-deposits tx-sender (- user-balance amount))
+   (var-set total-pool-balance (- pool-balance amount))
+   (update-rates)
+   (ok (- user-balance amount)))
+
+)
+
+
+;; Borrow STX with collateral
+(define-public (borrow (amount uint) (collateral uint))
+   (let (
+       (loan-id (var-get next-loan-id))
+       (pool-balance (var-get total-pool-balance))
+       (ltv-ratio (/ (* amount u100) collateral))
+       (current-rate (var-get current-interest-rate))
+       (due-block (+ block-height u52560)) ;; 1 year from now
+   )
+   (asserts! (>= amount MIN_LOAN_AMOUNT) ERR_INVALID_AMOUNT)
+   (asserts! (<= ltv-ratio MAX_LTV) ERR_COLLATERAL_RATIO_TOO_LOW)
+   (asserts! (>= pool-balance amount) ERR_POOL_INSUFFICIENT)
+   (asserts! (> collateral u0) ERR_INSUFFICIENT_COLLATERAL)
+  
+   ;; Transfer collateral from borrower
+   (try! (stx-transfer? collateral tx-sender (as-contract tx-sender)))
+  
+   ;; Transfer loan amount to borrower
+   (try! (as-contract (stx-transfer? amount tx-sender tx-sender)))
+  
+   ;; Create loan record
+   (map-set loans loan-id {
+       borrower: tx-sender,
+       amount: amount,
+       collateral: collateral,
+       interest-rate: current-rate,
+       start-block: block-height,
+       due-block: due-block,
+       is-active: true,
+       is-liquidated: false
+   })
 
