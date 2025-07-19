@@ -29,6 +29,7 @@
 (define-data-var total-pool-balance uint u0)
 (define-data-var total-borrowed uint u0)
 (define-data-var protocol-fees uint u0)
+(define-data-var utilization-rate uint u0)
 
 
 ;; User balances in lending pool
@@ -44,15 +45,12 @@
    start-block: uint,
    due-block: uint,
    is-active: bool,
+   is-liquidated: bool
 })
 
 
-;; User loan IDs
-(define-map user-loans principal (list 50 uint))
-
-
 ;; Interest rate model variables
-(define-data-var utilization-rate uint u0)
+;; (define-data-var utilization-rate uint u0) ;; Removed duplicate
 (define-data-var current-interest-rate uint BASE_INTEREST_RATE)
 
 
@@ -60,50 +58,21 @@
 
 
 ;; Calculate interest based on blocks elapsed
-;; (define-private (calculate-interest (principal-amount uint) (interest-rate uint) (blocks-elapsed uint))
-;;    (let (
-;;        (annual-blocks u52560) ;; Approximate blocks per year
-;;        (interest-per-block (/ (* principal-amount interest-rate) (* annual-blocks u100)))
-;;    )
-;;    (* interest-per-block blocks-elapsed))
-;; )
 
 
 ;; Calculate current debt including interest
-(define-private (calculate-current-debt (loan-id uint))
-   (match (map-get? loans loan-id)
-       loan-data
-       (let (
-           (blocks-elapsed (- block-height (get start-block loan-data)))
-           (interest (calculate-interest (get amount loan-data) (get interest-rate loan-data) blocks-elapsed))
-       )
-       (+ (get amount loan-data) interest))
-       u0
-   )
-)
+;; (Removed duplicate definition that returned ERR_LOAN_NOT_FOUND)
 
 
-;; User loan IDs
-(define-map user-loans principal (list 50 uint))
-
-
-;; Interest rate model variables
-(define-data-var utilization-rate uint u0)
-(define-data-var current-interest-rate uint BASE_INTEREST_RATE)
-
-
-;; private functions
-
-
-;; Calculate interest based on blocks elapsed
-(define-private (calculate-interest (principal-amount uint) (interest-rate uint) (blocks-elapsed uint))
+;; Calculate interest based on principal, rate, and blocks elapsed
+(define-private (calculate-interest (principal uint) (rate uint) (blocks-elapsed uint))
+   ;; Simple interest: principal * rate * blocks / (100 * blocks-per-year)
    (let (
-       (annual-blocks u52560) ;; Approximate blocks per year
-       (interest-per-block (/ (* principal-amount interest-rate) (* annual-blocks u100)))
+       (blocks-per-year u52560) ;; Approximate number of blocks per year
    )
-   (* interest-per-block blocks-elapsed))
+   (/ (* principal rate blocks-elapsed) (* u100 blocks-per-year))
+   )
 )
-
 
 ;; Calculate current debt including interest
 (define-private (calculate-current-debt (loan-id uint))
@@ -158,6 +127,8 @@
 )
 
 ;; Add loan ID to user's loan list
+;; Adds a loan ID to the specified user's list of loans in the user-loans map.
+;; This function is used to track all loans associated with a user for retrieval and management.
 (define-private (add-user-loan (user principal) (loan-id uint))
    (let (
        (current-loans (default-to (list) (map-get? user-loans user)))
@@ -282,7 +253,6 @@
 )
 
 
-;; Liquidate undercollateralized loan
 (define-public (liquidate-loan (loan-id uint))
    (match (map-get? loans loan-id)
        loan-data
@@ -314,26 +284,7 @@
        (update-rates)
        (ok liquidator-reward)))
        ERR_LOAN_NOT_FOUND
-       (var-set protocol-fees (+ (var-get protocol-fees) (/ interest-earned u10))) ;; 10% of interest as protocol fee
-       (update-rates)
-       (ok current-debt)))
-       ERR_LOAN_NOT_FOUND
    )
-)
-
-  )
-)
-
-
-;; Get loan details
-(define-read-only (get-loan (loan-id uint))
-   (map-get? loans loan-id)
-)
-
-
-;; Get user's deposit balance
-(define-read-only (get-user-balance (user principal))
-   (default-to u0 (map-get? user-deposits user))
 )
 
 
