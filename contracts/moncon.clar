@@ -45,7 +45,6 @@
    start-block: uint,
    due-block: uint,
    is-active: bool,
-   is-liquidated: bool
 })
 
 
@@ -62,13 +61,13 @@
 
 
 ;; Calculate interest based on blocks elapsed
-(define-private (calculate-interest (principal-amount uint) (interest-rate uint) (blocks-elapsed uint))
-   (let (
-       (annual-blocks u52560) ;; Approximate blocks per year
-       (interest-per-block (/ (* principal-amount interest-rate) (* annual-blocks u100)))
-   )
-   (* interest-per-block blocks-elapsed))
-)
+;; (define-private (calculate-interest (principal-amount uint) (interest-rate uint) (blocks-elapsed uint))
+;;    (let (
+;;        (annual-blocks u52560) ;; Approximate blocks per year
+;;        (interest-per-block (/ (* principal-amount interest-rate) (* annual-blocks u100)))
+;;    )
+;;    (* interest-per-block blocks-elapsed))
+;; )
 
 
 ;; Calculate current debt including interest
@@ -84,9 +83,6 @@
    )
 )
 
-
-   is-liquidated: bool
-})
 
 
 ;; User loan IDs
